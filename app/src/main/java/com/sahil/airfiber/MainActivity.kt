@@ -92,24 +92,26 @@ class MainActivity : AppCompatActivity() {
 
         val creditCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
+            gravity = Gravity.CENTER_HORIZONTAL
             setBackgroundResource(R.drawable.glass_pill)
             setPadding(dp(10), dp(7), dp(10), dp(7))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.05f).apply {
                 marginStart = dp(8)
             }
         }
         creditCol.addView(TextView(this).apply {
             text = "Made with ❤️ by Sahil Ahmed"
             textSize = 10.5f
-            gravity = Gravity.END
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#E0F2FE"))
         })
         creditCol.addView(TextView(this).apply {
-            text = "Field Service Engineer\n(Hindustan Enterprises)"
+            text = "Field Service Engineer at\nHindustan Enterprises"
             textSize = 9.5f
-            gravity = Gravity.END
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             setTextColor(Color.parseColor("#94A3B8"))
             setPadding(0, dp(2), 0, 0)
         })
