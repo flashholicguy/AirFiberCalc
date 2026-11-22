@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#E0F2FE"))
         })
         creditCol.addView(TextView(this).apply {
-            text = "Field Service Engineer at Hindustan Enterprises"
+            text = "Field Service Engineer\n(Hindustan Enterprises)"
             textSize = 9.5f
             gravity = Gravity.END
             setTextColor(Color.parseColor("#94A3B8"))
