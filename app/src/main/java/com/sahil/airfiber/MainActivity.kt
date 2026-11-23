@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
 
     private var selectedPlan: AirFiberPlan = plans.first()
     private var selectedDate: LocalDate = LocalDate.now()
+    private var selectedCycleDay: Int = 27
     private var lastWhatsAppReport: String = ""
 
     private lateinit var etGstBase: EditText
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var planChips: MutableMap<Int, TextView>
     private lateinit var tvPlanMeta: TextView
     private lateinit var tvDateBtn: TextView
+    private lateinit var tvCycleBtn: TextView
     private lateinit var tvSummaryOutput: TextView
     private lateinit var ledgerContainer: LinearLayout
 
@@ -122,8 +124,8 @@ class MainActivity : AppCompatActivity() {
             addView(tvPlanMeta)
             val dateRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(12)) }
             tvDateBtn = createPill("Install: ${selectedDate.format(fullDateFmt)}", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.35f); setOnClickListener { openDatePicker() } }
-            val cycleBadge = createPill("Cycle: 27th", true).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 0.95f).apply { marginStart = dp(8) } }
-            dateRow.addView(tvDateBtn); dateRow.addView(cycleBadge); addView(dateRow)
+            tvCycleBtn = createPill("Cycle: 27th", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 0.95f).apply { marginStart = dp(8) }; setOnClickListener { openCycleSelector() } }
+            dateRow.addView(tvDateBtn); dateRow.addView(tvCycleBtn); addView(dateRow)
             tvSummaryOutput = TextView(this@MainActivity).apply { setBackgroundResource(R.drawable.glass_pill_active); setPadding(dp(14), dp(12), dp(14), dp(12)); textSize = 13.5f; setLineSpacing(dp(3).toFloat(), 1f); setTextColor(Color.parseColor("#F8FAFC")) }
             addView(tvSummaryOutput)
             val actionRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, dp(10)) }
@@ -148,7 +150,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.2)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.3)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -185,11 +187,16 @@ class MainActivity : AppCompatActivity() {
         DatePickerDialog(this, { _, y, m, d -> selectedDate = LocalDate.of(y, m + 1, d); tvDateBtn.text = "Install: ${selectedDate.format(fullDateFmt)}"; recalculateLedger() }, selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth).show()
     }
 
+    private fun openCycleSelector() {
+        val days = (1..28).map { "${it}${daySuffix(it)} of every month" }.toTypedArray()
+        android.app.AlertDialog.Builder(this).setTitle("Select Billing Cycle Date").setItems(days) { _, w -> selectedCycleDay = w + 1; tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)}"; recalculateLedger() }.show()
+    }
+
     private fun recalculateLedger() {
         val p = selectedPlan
         tvPlanMeta.text = "${p.offering}\nMRP w/ 18% GST: ₹${formatMoney(p.mrpWithGst)}  •  Put Down: ₹${p.putDownPrice}  •  Validity: ${p.validityText()}"
         val validityEndDate = selectedDate.plusMonths(p.validMonths.toLong()).plusDays(p.validDays.toLong())
-        var cycleDate = if (selectedDate.dayOfMonth <= 27) selectedDate.withDayOfMonth(27) else selectedDate.plusMonths(1).withDayOfMonth(27)
+        var cycleDate = if (selectedDate.dayOfMonth <= selectedCycleDay) selectedDate.withDayOfMonth(selectedCycleDay) else selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
         val monthLines = mutableListOf<String>()
         while (!cycleDate.isAfter(validityEndDate)) {
             monthLines.add("${cycleDate.format(shortMonthFmt)} Bill - Nil")
@@ -206,7 +213,7 @@ class MainActivity : AppCompatActivity() {
         val exactOutput = "✅ Bill Details\n\n" +
             "📦 Plan : ${p.code}\n" +
             "📅 Install Date : ${selectedDate.format(fullDateFmt)}\n" +
-            "🔄 Billing Cycle : 27th of every month\n\n" +
+            "🔄 Billing Cycle : ${selectedCycleDay}${daySuffix(selectedCycleDay)} of every month\n\n" +
             "📊 Month Wise Bill - Payable Amount\n\n" +
             "$monthWiseBlock\n\n" +
             "🗓️ Payable Bill Date : ${payableBillDate.format(fullDateFmt)}\n" +
@@ -245,4 +252,5 @@ class MainActivity : AppCompatActivity() {
     private fun round2(v: Double): Double = (v * 100.0).roundToLong() / 100.0
     private fun formatMoney(v: Double): String = String.format(Locale.ENGLISH, "%.2f", v)
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    private fun daySuffix(d: Int): String = when { d in 11..13 -> "th"; d % 10 == 1 -> "st"; d % 10 == 2 -> "nd"; d % 10 == 3 -> "rd"; else -> "th" }
 }
