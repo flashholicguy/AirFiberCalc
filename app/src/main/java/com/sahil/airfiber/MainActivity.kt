@@ -178,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.6)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.7)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -574,7 +574,11 @@ class MainActivity : AppCompatActivity() {
             selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
         }
 
-        val firstCycleDays = ChronoUnit.DAYS.between(selectedDate, currentBillDate).toInt().coerceAtLeast(1)
+        val firstCycleDays = if (selectedDate.dayOfMonth <= selectedCycleDay) {
+            (selectedCycleDay - selectedDate.dayOfMonth).coerceAtLeast(1)
+        } else {
+            ((30 - selectedDate.dayOfMonth).coerceAtLeast(0) + selectedCycleDay).coerceAtLeast(1)
+        }
 
         data class BillRow(
             val monthTag: String,
@@ -611,7 +615,7 @@ class MainActivity : AppCompatActivity() {
 
         val monthWiseBlock = rows.joinToString("\n") { r ->
             if (r.payable == 0.0) "${r.monthTag} Bill - Nil"
-            else "${r.monthTag} Bill - ₹${formatMoney(r.payable)}"
+            else "${r.monthTag} Payable Amount - ₹${formatMoney(r.payable)} (With GST)"
         }
 
         val exactOutput = "✅ Bill Details\n\n" +
