@@ -1,6 +1,8 @@
 package com.sahil.airfiber
 
-import android.app.DatePickerDialog
+import android.app.Dialog
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.content.*
 import android.graphics.*
 import android.net.Uri
@@ -10,7 +12,11 @@ import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.TextStyle
+import java.time.temporal.WeekFields
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -150,7 +156,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.3)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.5)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -184,12 +190,343 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openDatePicker() {
-        DatePickerDialog(this, { _, y, m, d -> selectedDate = LocalDate.of(y, m + 1, d); tvDateBtn.text = "Install: ${selectedDate.format(fullDateFmt)}"; recalculateLedger() }, selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth).show()
+        showGlassDatePicker(selectedDate) { picked ->
+            selectedDate = picked
+            tvDateBtn.text = "Install: ${selectedDate.format(fullDateFmt)}"
+            recalculateLedger()
+        }
+    }
+
+
+    private fun showGlassDatePicker(initialDate: LocalDate, onDateConfirmed: (LocalDate) -> Unit) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(true)
+
+        var currentMonth = YearMonth.from(initialDate)
+        var tempSelected = initialDate
+        var yearPickerMode = false
+        val today = LocalDate.now()
+        val locale = Locale.getDefault()
+        val firstDow = WeekFields.of(locale).firstDayOfWeek
+        val orderedDaysOfWeek = (0 until 7).map { firstDow.plus(it.toLong()) }
+
+        val cardBg = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#F20B1324"), Color.parseColor("#F2111D35"), Color.parseColor("#F2080E1C"))
+        ).apply {
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1), Color.parseColor("#557DD3FC"))
+        }
+
+        val rootCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBg
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+
+        val topTagRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        topTagRow.addView(sectionLabel("SELECT INSTALL DATE").apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val tvSelectedPreview = TextView(this).apply {
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#38BDF8"))
+        }
+        topTagRow.addView(tvSelectedPreview)
+        rootCard.addView(topTagRow)
+
+        val navRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(10))
+        }
+        val btnPrev = createPill("‹", false).apply {
+            textSize = 18f
+            layoutParams = LinearLayout.LayoutParams(dp(42), dp(40))
+        }
+        val tvMonthYear = createPill("", true).apply {
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                marginStart = dp(8)
+                marginEnd = dp(8)
+            }
+        }
+        val btnNext = createPill("›", false).apply {
+            textSize = 18f
+            layoutParams = LinearLayout.LayoutParams(dp(42), dp(40))
+        }
+        navRow.addView(btnPrev)
+        navRow.addView(tvMonthYear)
+        navRow.addView(btnNext)
+        rootCard.addView(navRow)
+
+        val weekHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        orderedDaysOfWeek.forEach { dow ->
+            weekHeaderRow.addView(TextView(this).apply {
+                text = dow.getDisplayName(TextStyle.SHORT_STANDALONE, locale).take(3).uppercase(locale)
+                gravity = Gravity.CENTER
+                textSize = 10.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (dow == DayOfWeek.SUNDAY) Color.parseColor("#7DD3FC") else Color.parseColor("#94A3B8"))
+                layoutParams = LinearLayout.LayoutParams(0, dp(24), 1f)
+            })
+        }
+        rootCard.addView(weekHeaderRow)
+
+        val gridContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        rootCard.addView(gridContainer)
+
+        lateinit var renderCalendar: () -> Unit
+        renderCalendar = {
+            tvSelectedPreview.text = tempSelected.format(fullDateFmt)
+            val monthName = currentMonth.month.getDisplayName(TextStyle.FULL_STANDALONE, locale)
+            tvMonthYear.text = if (yearPickerMode) "${currentMonth.year}  ▴" else "$monthName ${currentMonth.year}  ▾"
+            weekHeaderRow.visibility = if (yearPickerMode) View.GONE else View.VISIBLE
+            gridContainer.removeAllViews()
+
+            if (yearPickerMode) {
+                val startYear = currentMonth.year - 5
+                for (r in 0 until 4) {
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, dp(3), 0, dp(3))
+                    }
+                    for (c in 0 until 3) {
+                        val yr = startYear + (r * 3) + c
+                        val isCurYr = yr == currentMonth.year
+                        row.addView(createPill(yr.toString(), isCurYr).apply {
+                            textSize = 13.5f
+                            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                                if (c > 0) marginStart = dp(6)
+                            }
+                            setOnClickListener {
+                                currentMonth = YearMonth.of(yr, currentMonth.monthValue)
+                                val clampedDay = tempSelected.dayOfMonth.coerceAtMost(currentMonth.lengthOfMonth())
+                                tempSelected = LocalDate.of(yr, currentMonth.monthValue, clampedDay)
+                                yearPickerMode = false
+                                renderCalendar()
+                            }
+                        })
+                    }
+                    gridContainer.addView(row)
+                }
+            } else {
+                val firstOfMonth = currentMonth.atDay(1)
+                val leadingEmpty = (firstOfMonth.dayOfWeek.value - firstDow.value + 7) % 7
+                val daysInMonth = currentMonth.lengthOfMonth()
+                var dayCounter = 1
+
+                for (week in 0 until 6) {
+                    if (dayCounter > daysInMonth) break
+                    val weekRow = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, dp(2), 0, dp(2))
+                    }
+                    for (col in 0 until 7) {
+                        val cellIndex = week * 7 + col
+                        if (cellIndex < leadingEmpty || dayCounter > daysInMonth) {
+                            weekRow.addView(View(this).apply {
+                                layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f)
+                            })
+                        } else {
+                            val d = dayCounter++
+                            val cellDate = currentMonth.atDay(d)
+                            val isSelected = cellDate == tempSelected
+                            val isToday = cellDate == today
+
+                            val cellView = TextView(this).apply {
+                                text = d.toString()
+                                gravity = Gravity.CENTER
+                                textSize = 13.5f
+                                setTypeface(null, if (isSelected || isToday) Typeface.BOLD else Typeface.NORMAL)
+                                setTextColor(
+                                    when {
+                                        isSelected -> Color.parseColor("#F8FAFC")
+                                        isToday -> Color.parseColor("#38BDF8")
+                                        else -> Color.parseColor("#E2E8F0")
+                                    }
+                                )
+                                when {
+                                    isSelected -> setBackgroundResource(R.drawable.glass_pill_active)
+                                    isToday -> background = GradientDrawable().apply {
+                                        shape = GradientDrawable.RECTANGLE
+                                        cornerRadius = dp(12).toFloat()
+                                        setColor(Color.parseColor("#1438BDF8"))
+                                        setStroke(dp(1), Color.parseColor("#6638BDF8"))
+                                    }
+                                    else -> setBackgroundColor(Color.TRANSPARENT)
+                                }
+                                layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                                    marginStart = dp(2)
+                                    marginEnd = dp(2)
+                                }
+                                setOnClickListener {
+                                    tempSelected = cellDate
+                                    renderCalendar()
+                                }
+                            }
+                            weekRow.addView(cellView)
+                        }
+                    }
+                    gridContainer.addView(weekRow)
+                }
+            }
+        }
+
+        btnPrev.setOnClickListener {
+            currentMonth = if (yearPickerMode) currentMonth.minusYears(12) else currentMonth.minusMonths(1)
+            renderCalendar()
+        }
+        btnNext.setOnClickListener {
+            currentMonth = if (yearPickerMode) currentMonth.plusYears(12) else currentMonth.plusMonths(1)
+            renderCalendar()
+        }
+        tvMonthYear.setOnClickListener {
+            yearPickerMode = !yearPickerMode
+            renderCalendar()
+        }
+
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        val btnToday = createPill("Today", false).apply {
+            textSize = 12.5f
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 0.9f)
+            setOnClickListener {
+                tempSelected = LocalDate.now()
+                currentMonth = YearMonth.from(tempSelected)
+                yearPickerMode = false
+                renderCalendar()
+            }
+        }
+        val btnCancel = createPill("Cancel", false).apply {
+            textSize = 12.5f
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginStart = dp(8) }
+            setOnClickListener { dialog.dismiss() }
+        }
+        val btnConfirm = createPill("Confirm", true).apply {
+            textSize = 12.5f
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 1.1f).apply { marginStart = dp(8) }
+            setOnClickListener {
+                onDateConfirmed(tempSelected)
+                dialog.dismiss()
+            }
+        }
+        actionRow.addView(btnToday)
+        actionRow.addView(btnCancel)
+        actionRow.addView(btnConfirm)
+        rootCard.addView(actionRow)
+
+        renderCalendar()
+        dialog.setContentView(rootCard)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.68f)
+            val widthPx = (resources.displayMetrics.widthPixels * 0.92f).toInt()
+            setLayout(widthPx, WindowManager.LayoutParams.WRAP_CONTENT)
+        }
+        dialog.show()
     }
 
     private fun openCycleSelector() {
-        val days = (1..28).map { "${it}${daySuffix(it)} of every month" }.toTypedArray()
-        android.app.AlertDialog.Builder(this).setTitle("Select Billing Cycle Date").setItems(days) { _, w -> selectedCycleDay = w + 1; tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)}"; recalculateLedger() }.show()
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(true)
+
+        val cardBg = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#F20B1324"), Color.parseColor("#F2111D35"), Color.parseColor("#F2080E1C"))
+        ).apply {
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1), Color.parseColor("#557DD3FC"))
+        }
+
+        val rootCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBg
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
+        }
+        headerRow.addView(sectionLabel("SELECT BILLING CYCLE").apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        headerRow.addView(TextView(this).apply {
+            text = "${selectedCycleDay}${daySuffix(selectedCycleDay)} monthly"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#38BDF8"))
+        })
+        rootCard.addView(headerRow)
+
+        rootCard.addView(TextView(this).apply {
+            text = "Choose billing cycle day (1st–28th for all-month consistency):"
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(0, 0, 0, dp(10))
+        })
+
+        for (rowIdx in 0 until 7) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(3), 0, dp(3))
+            }
+            for (colIdx in 0 until 4) {
+                val dayNum = (rowIdx * 4) + colIdx + 1
+                val isSelected = dayNum == selectedCycleDay
+                val cell = createPill("${dayNum}${daySuffix(dayNum)}", isSelected).apply {
+                    textSize = 13f
+                    layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                        if (colIdx > 0) marginStart = dp(6)
+                    }
+                    setOnClickListener {
+                        selectedCycleDay = dayNum
+                        tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)}"
+                        recalculateLedger()
+                        dialog.dismiss()
+                    }
+                }
+                row.addView(cell)
+            }
+            rootCard.addView(row)
+        }
+
+        val btnCancel = createPill("Cancel", false).apply {
+            textSize = 12.5f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(42)
+            ).apply { topMargin = dp(10) }
+            setOnClickListener { dialog.dismiss() }
+        }
+        rootCard.addView(btnCancel)
+
+        dialog.setContentView(rootCard)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.68f)
+            val widthPx = (resources.displayMetrics.widthPixels * 0.90f).toInt()
+            setLayout(widthPx, WindowManager.LayoutParams.WRAP_CONTENT)
+        }
+        dialog.show()
     }
 
     private fun recalculateLedger() {
