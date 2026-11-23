@@ -1,27 +1,13 @@
 package com.sahil.airfiber
 
 import android.app.DatePickerDialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
+import android.content.*
+import android.graphics.*
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.text.Editable
-import android.text.InputType
-import android.text.TextWatcher
-import android.view.Gravity
-import android.view.View
-import android.view.WindowManager
-import android.widget.EditText
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import android.os.*
+import android.text.*
+import android.view.*
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import java.time.LocalDate
@@ -32,18 +18,34 @@ import kotlin.math.roundToLong
 
 class MainActivity : AppCompatActivity() {
 
+    data class AirFiberPlan(val code: Int, val offering: String, val mrpWithGst: Double, val putDownPrice: Int, val validMonths: Int, val validDays: Int) {
+        fun validityText(): String {
+            val m = if (validMonths == 1) "1 Month" else "$validMonths Months"
+            return when (validDays) { 0 -> m; 1 -> "$m 1 Day"; else -> "$m $validDays Days" }
+        }
+    }
+
+    private val plans = listOf(
+        AirFiberPlan(499, "40 MBPS WiFi ONLY", 588.82, 2500, 4, 7),
+        AirFiberPlan(599, "30 MBPS BLACK IPTV + OTT", 706.82, 2500, 3, 16),
+        AirFiberPlan(699, "40 MBPS BLACK IPTV + OTT", 824.82, 2500, 3, 1),
+        AirFiberPlan(799, "100 MBPS WiFi ONLY", 942.82, 2500, 2, 20),
+        AirFiberPlan(899, "100 MBPS BLACK IPTV + OTT", 1060.82, 2500, 2, 11),
+        AirFiberPlan(999, "100 MBPS WiFi ONLY + OTT (Amazon & Netflix)", 1178.82, 2500, 2, 4),
+        AirFiberPlan(1199, "100 MBPS BLACK IPTV + OTT (Prime & Netflix)", 1414.82, 2500, 1, 23),
+        AirFiberPlan(1599, "300 MBPS BLACK IPTV + OTT (Prime & Netflix)", 1886.82, 2500, 1, 10),
+        AirFiberPlan(3999, "1 GBPS BLACK IPTV + OTT (Prime & Netflix)", 4718.82, 14000, 3, 0)
+    )
+
+    private var selectedPlan: AirFiberPlan = plans.first()
     private var selectedDate: LocalDate = LocalDate.now()
-    private var selectedAdvance: Double = 1500.0
-    private var selectedCycleDay: Int = 6
-    private var lastFormattedReport: String = ""
+    private var lastWhatsAppReport: String = ""
 
     private lateinit var etGstBase: EditText
     private lateinit var tvGstResult: TextView
-    private lateinit var etPlanBase: EditText
+    private lateinit var planChips: MutableMap<Int, TextView>
+    private lateinit var tvPlanMeta: TextView
     private lateinit var tvDateBtn: TextView
-    private lateinit var tvCycleBtn: TextView
-    private lateinit var btnAdv1500: TextView
-    private lateinit var btnAdv2500: TextView
     private lateinit var tvSummaryOutput: TextView
     private lateinit var ledgerContainer: LinearLayout
 
@@ -55,573 +57,192 @@ class MainActivity : AppCompatActivity() {
         enableMaxRefreshRate()
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val rootScroll = ScrollView(this).apply {
-            isFillViewport = true
-            overScrollMode = View.OVER_SCROLL_ALWAYS
-        }
-
+        val rootScroll = ScrollView(this).apply { isFillViewport = true; overScrollMode = View.OVER_SCROLL_ALWAYS }
         val mainColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val padH = dp(16)
-            setPadding(padH, dp(46), padH, dp(36))
+            setPadding(dp(16), dp(46), dp(16), dp(36))
         }
 
-        // HEADER ROW (App Title on Left + Personal Credit on Right)
         val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(16))
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(16))
         }
-
         val titleCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.15f)
+            addView(TextView(this@MainActivity).apply { text = "AirFiber Billing & GST"; textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#F8FAFC")) })
+            addView(TextView(this@MainActivity).apply { text = "Plan Validity & 27th Cycle Calculator"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(2), 0, 0) })
         }
-        titleCol.addView(TextView(this).apply {
-            text = "AirFiber Billing & GST"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#F8FAFC"))
-        })
-        titleCol.addView(TextView(this).apply {
-            text = "Instant GST & Advance Recharge Ledger"
-            textSize = 12f
-            setTextColor(Color.parseColor("#94A3B8"))
-            setPadding(0, dp(2), 0, 0)
-        })
-
         val creditCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundResource(R.drawable.glass_pill)
-            setPadding(dp(10), dp(7), dp(10), dp(7))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.05f).apply {
-                marginStart = dp(8)
-            }
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundResource(R.drawable.glass_pill); setPadding(dp(10), dp(7), dp(10), dp(7))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.05f).apply { marginStart = dp(8) }
+            addView(TextView(this@MainActivity).apply { text = "Made with ❤️ by Sahil Ahmed"; textSize = 10.5f; gravity = Gravity.CENTER; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#E0F2FE")) })
+            addView(TextView(this@MainActivity).apply { text = "Field Service Engineer at\nHindustan Enterprises"; textSize = 9.5f; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(2), 0, 0) })
         }
-        creditCol.addView(TextView(this).apply {
-            text = "Made with ❤️ by Sahil Ahmed"
-            textSize = 10.5f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#E0F2FE"))
-        })
-        creditCol.addView(TextView(this).apply {
-            text = "Field Service Engineer at\nHindustan Enterprises"
-            textSize = 9.5f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            setTextColor(Color.parseColor("#94A3B8"))
-            setPadding(0, dp(2), 0, 0)
-        })
+        headerRow.addView(titleCol); headerRow.addView(creditCol); mainColumn.addView(headerRow)
 
-        headerRow.addView(titleCol)
-        headerRow.addView(creditCol)
-        mainColumn.addView(headerRow)
-
-        // CARD 1: Simple 18% GST Calculator
         val gstCard = createGlassCard().apply {
             addView(sectionLabel("1. QUICK 18% GST CALCULATOR"))
-
-            val row = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(8), 0, dp(8))
+            val row = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(8)) }
+            etGstBase = createGlassInput("Base Plan (e.g. 499)").apply { setText("499"); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f) }
+            tvGstResult = TextView(this@MainActivity).apply { text = "₹588.82"; textSize = 22f; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#38BDF8")); gravity = Gravity.END; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            row.addView(etGstBase); row.addView(tvGstResult); addView(row)
+            val chipScroll = HorizontalScrollView(this@MainActivity).apply { isHorizontalScrollBarEnabled = false }
+            val chipRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            plans.forEachIndexed { idx, p ->
+                chipRow.addView(createPill(p.code.toString(), false).apply {
+                    setPadding(dp(11), dp(6), dp(11), dp(6)); textSize = 12f
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (idx > 0) marginStart = dp(6) }
+                    setOnClickListener { etGstBase.setText(p.code.toString()) }
+                })
             }
-
-            etGstBase = createGlassInput("Base Plan (e.g. 499)").apply {
-                setText("499")
-                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
-            }
-
-            tvGstResult = TextView(this@MainActivity).apply {
-                text = "₹588.82"
-                textSize = 22f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#38BDF8"))
-                gravity = Gravity.END
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            row.addView(etGstBase)
-            row.addView(tvGstResult)
-            addView(row)
-
-            val chipRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-            }
-            listOf("499", "599", "699", "799", "899", "999").forEachIndexed { idx, amt ->
-                val chip = createPill(amt, false).apply {
-                    setPadding(dp(10), dp(6), dp(10), dp(6))
-                    textSize = 12f
-                    val lp = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                    if (idx > 0) lp.marginStart = dp(6)
-                    layoutParams = lp
-                    setOnClickListener { etGstBase.setText(amt) }
-                }
-                chipRow.addView(chip)
-            }
-            addView(chipRow)
+            chipScroll.addView(chipRow); addView(chipScroll)
         }
         mainColumn.addView(gstCard)
 
-        // CARD 2: Advance Recharge Structure Calculator
         val advCard = createGlassCard().apply {
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(14) }
-            layoutParams = lp
-
-            addView(sectionLabel("2. UPCOMING RECHARGE STRUCTURE"))
-
-            val topRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(10), 0, dp(8))
-            }
-
-            etPlanBase = createGlassInput("Plan (499)").apply {
-                setText("499")
-                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f)
-            }
-
-            btnAdv1500 = createPill("₹1500 Adv", true).apply {
-                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-                    marginStart = dp(8)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) }
+            addView(sectionLabel("2. AIRFIBER PLAN & BILL CALCULATOR"))
+            val planScroll = HorizontalScrollView(this@MainActivity).apply { isHorizontalScrollBarEnabled = false; setPadding(0, dp(10), 0, dp(8)) }
+            val planRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            planChips = mutableMapOf()
+            plans.forEachIndexed { idx, p ->
+                val chip = createPill("₹${p.code}", p.code == selectedPlan.code).apply {
+                    setPadding(dp(14), dp(9), dp(14), dp(9)); textSize = 13f
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (idx > 0) marginStart = dp(8) }
+                    setOnClickListener { selectedPlan = p; etGstBase.setText(p.code.toString()); updatePlanChipsUI(); recalculateLedger() }
                 }
-                setOnClickListener {
-                    selectedAdvance = 1500.0
-                    updateAdvanceToggleUI()
-                    recalculateLedger()
-                }
+                planChips[p.code] = chip; planRow.addView(chip)
             }
-
-            btnAdv2500 = createPill("₹2500 Adv", false).apply {
-                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-                    marginStart = dp(8)
-                }
-                setOnClickListener {
-                    selectedAdvance = 2500.0
-                    updateAdvanceToggleUI()
-                    recalculateLedger()
-                }
+            planScroll.addView(planRow); addView(planScroll)
+            tvPlanMeta = TextView(this@MainActivity).apply {
+                setBackgroundResource(R.drawable.glass_pill); setPadding(dp(12), dp(9), dp(12), dp(9)); textSize = 12f; setTextColor(Color.parseColor("#CBD5E1"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
             }
-
-            topRow.addView(etPlanBase)
-            topRow.addView(btnAdv1500)
-            topRow.addView(btnAdv2500)
-            addView(topRow)
-
-            val dateRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(2), 0, dp(12))
-            }
-
-            tvDateBtn = createPill("Active: ${selectedDate.format(fullDateFmt)}", false).apply {
-                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.3f)
-                setOnClickListener { openDatePicker() }
-            }
-
-            tvCycleBtn = createPill("Cycle: ${selectedCycleDay}th", false).apply {
-                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-                    marginStart = dp(8)
-                }
-                setOnClickListener { openCycleSelector() }
-            }
-
-            dateRow.addView(tvDateBtn)
-            dateRow.addView(tvCycleBtn)
-            addView(dateRow)
-
-            tvSummaryOutput = TextView(this@MainActivity).apply {
-                setBackgroundResource(R.drawable.glass_pill_active)
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-                textSize = 13.5f
-                setLineSpacing(dp(3).toFloat(), 1f)
-                setTextColor(Color.parseColor("#F8FAFC"))
-            }
+            addView(tvPlanMeta)
+            val dateRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(12)) }
+            tvDateBtn = createPill("Install: ${selectedDate.format(fullDateFmt)}", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.35f); setOnClickListener { openDatePicker() } }
+            val cycleBadge = createPill("Cycle: 27th", true).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 0.95f).apply { marginStart = dp(8) } }
+            dateRow.addView(tvDateBtn); dateRow.addView(cycleBadge); addView(dateRow)
+            tvSummaryOutput = TextView(this@MainActivity).apply { setBackgroundResource(R.drawable.glass_pill_active); setPadding(dp(14), dp(12), dp(14), dp(12)); textSize = 13.5f; setLineSpacing(dp(3).toFloat(), 1f); setTextColor(Color.parseColor("#F8FAFC")) }
             addView(tvSummaryOutput)
-
-            val actionRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(10), 0, dp(10))
-            }
-
-            val btnCopy = createPill("Copy Bill Text", false).apply {
+            val actionRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, dp(10)) }
+            actionRow.addView(createPill("Copy Bill Text", false).apply {
                 layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
-                setOnClickListener {
-                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Bill Details", lastFormattedReport))
-                    Toast.makeText(this@MainActivity, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            val btnShare = createPill("Share WhatsApp", true).apply {
-                layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                    marginStart = dp(8)
-                }
-                setOnClickListener { shareText(lastFormattedReport) }
-            }
-
-            actionRow.addView(btnCopy)
-            actionRow.addView(btnShare)
-            addView(actionRow)
-
-            addView(sectionLabel("FULL BILL BREAKDOWN").apply {
-                setPadding(0, dp(6), 0, dp(8))
+                setOnClickListener { (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Bill Details", lastWhatsAppReport)); Toast.makeText(this@MainActivity, "Copied WhatsApp bill text", Toast.LENGTH_SHORT).show() }
             })
-
-            ledgerContainer = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-            }
+            actionRow.addView(createPill("Share WhatsApp", true).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(8) }
+                setOnClickListener { shareText(lastWhatsAppReport) }
+            })
+            addView(actionRow)
+            addView(sectionLabel("PLAN & VALIDITY BREAKDOWN").apply { setPadding(0, dp(6), 0, dp(8)) })
+            ledgerContainer = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(ledgerContainer)
         }
         mainColumn.addView(advCard)
 
-        // CARD 3: Developer Contact, GitHub & App Update Key
         val footerCard = createGlassCard().apply {
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(14) }
-            layoutParams = lp
-
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) }
             addView(sectionLabel("DEVELOPER & APP UPDATES"))
-
-            addView(TextView(this@MainActivity).apply {
-                text = "Feedback appreciated — reach out or check source updates:"
-                textSize = 12f
-                setTextColor(Color.parseColor("#94A3B8"))
-                setPadding(0, dp(6), 0, dp(10))
+            addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
+            addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
+            addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
+            addView(createPill("Check Updates & Releases (v1.2)", true).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
+                setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
-
-            // Email Pill with Icon
-            val emailPill = createIconLinkRow(
-                iconRes = R.drawable.ic_email,
-                label = "sahilahmed698@gmail.com"
-            ) {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("mailto:sahilahmed698@gmail.com")
-                    putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback")
-                }
-                runCatching { startActivity(intent) }
-            }
-            addView(emailPill)
-
-            // GitHub Pill with Icon
-            val githubPill = createIconLinkRow(
-                iconRes = R.drawable.ic_github,
-                label = "github.com/sahilhv"
-            ) {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))
-                runCatching { startActivity(intent) }
-            }.apply {
-                val p = layoutParams as LinearLayout.LayoutParams
-                p.topMargin = dp(8)
-                layoutParams = p
-            }
-            addView(githubPill)
-
-            // App Version & OTA Release Check Button
-            val updateBtn = createPill("Check Updates & Releases (v1.1)", true).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(44)
-                ).apply { topMargin = dp(10) }
-                setOnClickListener {
-                    val intent = Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases")
-                    )
-                    runCatching { startActivity(intent) }
-                }
-            }
-            addView(updateBtn)
         }
         mainColumn.addView(footerCard)
-
         rootScroll.addView(mainColumn)
         setContentView(rootScroll)
 
         etGstBase.addTextChangedListener(simpleWatcher { updateGst() })
-        etPlanBase.addTextChangedListener(simpleWatcher { recalculateLedger() })
-
         updateGst()
         recalculateLedger()
     }
 
-    private fun createIconLinkRow(iconRes: Int, label: String, onClick: () -> Unit): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setBackgroundResource(R.drawable.glass_pill)
-            setPadding(dp(14), dp(11), dp(14), dp(11))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-
-            val iv = ImageView(this@MainActivity).apply {
-                setImageResource(iconRes)
-                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
-            }
-
-            val tv = TextView(this@MainActivity).apply {
-                text = label
-                textSize = 13.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#F8FAFC"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginStart = dp(10) }
-            }
-
-            addView(iv)
-            addView(tv)
-            setOnClickListener { onClick() }
-        }
+    private fun createIconLinkRow(iconRes: Int, label: String, onClick: () -> Unit): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setBackgroundResource(R.drawable.glass_pill); setPadding(dp(14), dp(11), dp(14), dp(11))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        addView(ImageView(this@MainActivity).apply { setImageResource(iconRes); layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)) })
+        addView(TextView(this@MainActivity).apply { text = label; textSize = 13.5f; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#F8FAFC")); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(10) } })
+        setOnClickListener { onClick() }
     }
 
     private fun enableMaxRefreshRate() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val modes = display?.supportedModes ?: return
-            val maxMode = modes.maxByOrNull { it.refreshRate } ?: return
-            val params: WindowManager.LayoutParams = window.attributes
-            params.preferredDisplayModeId = maxMode.modeId
-            window.attributes = params
+            display?.supportedModes?.maxByOrNull { it.refreshRate }?.let { window.attributes = window.attributes.apply { preferredDisplayModeId = it.modeId } }
         }
     }
 
     private fun updateGst() {
         val base = etGstBase.text.toString().toDoubleOrNull() ?: 0.0
-        val total = round2(base * 1.18)
-        tvGstResult.text = "₹${formatMoney(total)}"
+        tvGstResult.text = "₹${formatMoney(round2(base * 1.18))}"
     }
 
     private fun openDatePicker() {
-        DatePickerDialog(
-            this,
-            { _, year, month, dayOfMonth ->
-                selectedDate = LocalDate.of(year, month + 1, dayOfMonth)
-                tvDateBtn.text = "Active: ${selectedDate.format(fullDateFmt)}"
-                recalculateLedger()
-            },
-            selectedDate.year,
-            selectedDate.monthValue - 1,
-            selectedDate.dayOfMonth
-        ).show()
-    }
-
-    private fun openCycleSelector() {
-        val days = (1..28).map { "${it}${daySuffix(it)} of every month" }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Select Billing Cycle Date")
-            .setItems(days) { _, which ->
-                selectedCycleDay = which + 1
-                tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)}"
-                recalculateLedger()
-            }
-            .show()
+        DatePickerDialog(this, { _, y, m, d -> selectedDate = LocalDate.of(y, m + 1, d); tvDateBtn.text = "Install: ${selectedDate.format(fullDateFmt)}"; recalculateLedger() }, selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth).show()
     }
 
     private fun recalculateLedger() {
-        val basePlan = etPlanBase.text.toString().toDoubleOrNull() ?: 499.0
-        val monthlyWithGst = round2(basePlan * 1.18)
-        var remainingAdvance = selectedAdvance
-
-        var currentBillDate = if (selectedDate.dayOfMonth <= selectedCycleDay) {
-            selectedDate.withDayOfMonth(selectedCycleDay)
-        } else {
-            selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
+        val p = selectedPlan
+        tvPlanMeta.text = "${p.offering}\nMRP w/ 18% GST: ₹${formatMoney(p.mrpWithGst)}  •  Put Down: ₹${p.putDownPrice}  •  Validity: ${p.validityText()}"
+        val validityEndDate = selectedDate.plusMonths(p.validMonths.toLong()).plusDays(p.validDays.toLong())
+        var cycleDate = if (selectedDate.dayOfMonth <= 27) selectedDate.withDayOfMonth(27) else selectedDate.plusMonths(1).withDayOfMonth(27)
+        val monthLines = mutableListOf<String>()
+        while (!cycleDate.isAfter(validityEndDate)) {
+            monthLines.add("${cycleDate.format(shortMonthFmt)} Bill - Nil")
+            cycleDate = cycleDate.plusMonths(1)
         }
+        val payableBillDate = cycleDate
+        val dueDate = payableBillDate.plusDays(10)
+        val remainingDays = ChronoUnit.DAYS.between(validityEndDate, payableBillDate).toInt().coerceIn(1, 30)
+        val remainingAmount = round2((p.mrpWithGst / 30.0) * remainingDays)
+        val afterDiscount = round2((remainingAmount - 100.0).coerceAtLeast(0.0))
+        monthLines.add("${payableBillDate.format(shortMonthFmt)} Bill - ₹${formatMoney(remainingAmount)}")
+        val monthWiseBlock = monthLines.joinToString("\n")
 
-        val firstCycleDays = ChronoUnit.DAYS.between(selectedDate, currentBillDate).toInt().coerceAtLeast(1)
+        val exactOutput = "✅ Bill Details\n\n" +
+            "📦 Plan : ${p.code}\n" +
+            "📅 Install Date : ${selectedDate.format(fullDateFmt)}\n" +
+            "🔄 Billing Cycle : 27th of every month\n\n" +
+            "📊 Month Wise Bill - Payable Amount\n\n" +
+            "$monthWiseBlock\n\n" +
+            "🗓️ Payable Bill Date : ${payableBillDate.format(fullDateFmt)}\n" +
+            "⏰ Due Date : ${dueDate.format(fullDateFmt)}\n\n" +
+            "🎁 Get ₹100 Discount for the next 10 month\n" +
+            "Pay your bill through Airtel Thanks App\n\n" +
+            "💵 Payable Amount After Discount : ₹${formatMoney(afterDiscount)} (With GST)\n\n" +
+            "🔗 https://www.airtel.in/thanks"
 
-        data class BillRow(
-            val monthTag: String,
-            val billDate: LocalDate,
-            val dueDate: LocalDate,
-            val billAmount: Double,
-            val advanceAfter: Double,
-            val payable: Double
-        )
-
-        val rows = mutableListOf<BillRow>()
-        var isFirst = true
-
-        while (true) {
-            val rawBill = if (isFirst) {
-                round2((monthlyWithGst / 30.0) * firstCycleDays)
-            } else {
-                monthlyWithGst
-            }
-            isFirst = false
-
-            val dueDate = currentBillDate.plusDays(10)
-            val payable: Double
-            if (remainingAdvance >= rawBill) {
-                remainingAdvance = round2(remainingAdvance - rawBill)
-                payable = 0.0
-            } else {
-                payable = round2(rawBill - remainingAdvance)
-                remainingAdvance = 0.0
-            }
-
-            rows.add(
-                BillRow(
-                    monthTag = currentBillDate.format(shortMonthFmt),
-                    billDate = currentBillDate,
-                    dueDate = dueDate,
-                    billAmount = rawBill,
-                    advanceAfter = remainingAdvance,
-                    payable = payable
-                )
-            )
-
-            if (payable > 0.0 || rows.size > 18) break
-            currentBillDate = currentBillDate.plusMonths(1)
-        }
-
-        val finalRow = rows.last()
-        val afterDiscount = round2((finalRow.payable - 100.0).coerceAtLeast(0.0))
-
-        val monthWiseLines = rows.joinToString("\n") { r ->
-            if (r.payable == 0.0) {
-                "${r.monthTag} Bill - Nil"
-            } else {
-                "${r.monthTag} Payable Amount - ₹${formatMoney(r.payable)} (With GST)"
-            }
-        }
-
-        val summaryText = """
-✅ Bill Details
-
-📦 Plan : ${basePlan.toInt()} (₹${formatMoney(selectedAdvance)} Advance)
-📅 Install Date : ${selectedDate.format(fullDateFmt)}
-🔄 Billing Cycle : ${selectedCycleDay}${daySuffix(selectedCycleDay)} of every month
-
-📊 Month Wise Bill - Payable Amount
-$monthWiseLines
-
-🗓 Payable Bill Date : ${finalRow.billDate.format(fullDateFmt)}
-⏰ Due Date : ${finalRow.dueDate.format(fullDateFmt)}
-
-🎁 Get ₹100 Discount for the next 10 months
-Pay your bill through Airtel Thanks App
-
-💵 Payable After Discount : ₹${formatMoney(afterDiscount)} (With GST)
-        """.trimIndent()
-
-        tvSummaryOutput.text = summaryText
-
-        val breakdownText = StringBuilder("\n\n📊 FULL BILL BREAKDOWN\n\n")
+        lastWhatsAppReport = exactOutput
+        tvSummaryOutput.text = exactOutput
         ledgerContainer.removeAllViews()
-
-        rows.forEachIndexed { idx, r ->
-            val advLine = if (r.advanceAfter > 0.0) {
-                "Advance Remaining : ₹-${formatMoney(r.advanceAfter)}"
-            } else {
-                "Advance Remaining : ₹0.00"
-            }
-
-            breakdownText.append(
-                "📅 ${r.monthTag}\n" +
-                "Bill Date : ${r.billDate.format(fullDateFmt)}\n" +
-                "Due Date : ${r.dueDate.format(fullDateFmt)}\n" +
-                "Bill Amount : ₹${formatMoney(r.billAmount)}\n" +
-                (if (idx == 0) "Advance Paid : ₹${formatMoney(selectedAdvance)}\n" else "") +
-                "$advLine\n" +
-                "Payable Bill Amount : ₹${formatMoney(r.payable)}\n\n"
-            )
-
-            val itemCard = TextView(this).apply {
-                setBackgroundResource(if (r.payable > 0) R.drawable.glass_pill_active else R.drawable.glass_pill)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                textSize = 13f
-                setTextColor(Color.parseColor("#E2E8F0"))
-                text = "📅 ${r.monthTag}   |   Bill: ₹${formatMoney(r.billAmount)}   |   Payable: ₹${formatMoney(r.payable)}\n" +
-                       "Bill Date: ${r.billDate.format(fullDateFmt)}   •   Due: ${r.dueDate.format(fullDateFmt)}\n" +
-                       advLine
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                if (idx > 0) lp.topMargin = dp(8)
-                layoutParams = lp
-            }
-            ledgerContainer.addView(itemCard)
+        listOf(
+            "Plan Offering: ${p.offering}",
+            "Put Down Paid at Install: ₹${p.putDownPrice} (Covers ${p.validityText()})",
+            "Validity Ends On: ${validityEndDate.format(fullDateFmt)}",
+            "Unbilled Days Before ${payableBillDate.format(fullDateFmt)}: $remainingDays days",
+            "Prorated Bill: (₹${formatMoney(p.mrpWithGst)} ÷ 30) × $remainingDays = ₹${formatMoney(remainingAmount)}",
+            "After ₹100 Airtel Thanks Discount: ₹${formatMoney(afterDiscount)}"
+        ).forEachIndexed { idx, line ->
+            ledgerContainer.addView(TextView(this).apply {
+                setBackgroundResource(if (idx == 5) R.drawable.glass_pill_active else R.drawable.glass_pill)
+                setPadding(dp(12), dp(9), dp(12), dp(9)); textSize = 12.5f; setTextColor(Color.parseColor("#E2E8F0")); text = line
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (idx > 0) topMargin = dp(6) }
+            })
         }
-
-        lastFormattedReport = summaryText + breakdownText.toString().trimEnd()
     }
 
-    private fun shareText(content: String) {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, content)
-        }
-        startActivity(Intent.createChooser(intent, "Send Bill Breakdown"))
-    }
-
-    private fun updateAdvanceToggleUI() {
-        btnAdv1500.setBackgroundResource(if (selectedAdvance == 1500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
-        btnAdv2500.setBackgroundResource(if (selectedAdvance == 2500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
-    }
-
-    private fun createGlassCard(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setBackgroundResource(R.drawable.glass_card)
-        setPadding(dp(16), dp(16), dp(16), dp(16))
-    }
-
-    private fun createGlassInput(hintText: String): EditText = EditText(this).apply {
-        hint = hintText
-        setHintTextColor(Color.parseColor("#64748B"))
-        setTextColor(Color.parseColor("#F8FAFC"))
-        textSize = 16f
-        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        setBackgroundResource(R.drawable.glass_pill)
-        setPadding(dp(12), dp(8), dp(12), dp(8))
-    }
-
-    private fun createPill(label: String, active: Boolean): TextView = TextView(this).apply {
-        text = label
-        gravity = Gravity.CENTER
-        textSize = 13f
-        setTypeface(null, Typeface.BOLD)
-        setTextColor(Color.parseColor("#F8FAFC"))
-        setBackgroundResource(if (active) R.drawable.glass_pill_active else R.drawable.glass_pill)
-    }
-
-    private fun sectionLabel(title: String): TextView = TextView(this).apply {
-        text = title
-        textSize = 11f
-        letterSpacing = 0.08f
-        setTypeface(null, Typeface.BOLD)
-        setTextColor(Color.parseColor("#7DD3FC"))
-    }
-
-    private fun simpleWatcher(onChanged: () -> Unit): TextWatcher = object : TextWatcher {
-        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        override fun afterTextChanged(s: Editable?) = onChanged()
-    }
-
+    private fun shareText(content: String) { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, content) }, "Send Bill Details")) }
+    private fun updatePlanChipsUI() { planChips.forEach { (code, v) -> v.setBackgroundResource(if (code == selectedPlan.code) R.drawable.glass_pill_active else R.drawable.glass_pill) } }
+    private fun createGlassCard(): LinearLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.glass_card); setPadding(dp(16), dp(16), dp(16), dp(16)) }
+    private fun createGlassInput(h: String): EditText = EditText(this).apply { hint = h; setHintTextColor(Color.parseColor("#64748B")); setTextColor(Color.parseColor("#F8FAFC")); textSize = 16f; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; setBackgroundResource(R.drawable.glass_pill); setPadding(dp(12), dp(8), dp(12), dp(8)) }
+    private fun createPill(l: String, active: Boolean): TextView = TextView(this).apply { text = l; gravity = Gravity.CENTER; textSize = 13f; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#F8FAFC")); setBackgroundResource(if (active) R.drawable.glass_pill_active else R.drawable.glass_pill) }
+    private fun sectionLabel(t: String): TextView = TextView(this).apply { text = t; textSize = 11f; letterSpacing = 0.08f; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#7DD3FC")) }
+    private fun simpleWatcher(cb: () -> Unit): TextWatcher = object : TextWatcher { override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}; override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}; override fun afterTextChanged(s: Editable?) = cb() }
     private fun round2(v: Double): Double = (v * 100.0).roundToLong() / 100.0
     private fun formatMoney(v: Double): String = String.format(Locale.ENGLISH, "%.2f", v)
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-    private fun daySuffix(d: Int): String = when {
-        d in 11..13 -> "th"
-        d % 10 == 1 -> "st"
-        d % 10 == 2 -> "nd"
-        d % 10 == 3 -> "rd"
-        else -> "th"
-    }
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }
