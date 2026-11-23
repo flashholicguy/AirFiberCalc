@@ -179,7 +179,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.8)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.9)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -575,20 +575,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resolveVerifiedCycle(planCode: Int, installDate: LocalDate): Int? {
-        val verifiedRules = mapOf(
-            (499 to 1) to 6,
-            (499 to 6) to 12,
-            (499 to 10) to 18,
-            (499 to 15) to 24,
-            (499 to 23) to 27,
-            (499 to 27) to 3,
-            (599 to 1) to 9,
-            (699 to 1) to 9,
-            (799 to 1) to 6,
-            (899 to 1) to 9,
-            (999 to 1) to 6
+        val d = installDate.dayOfMonth
+        if (planCode == 499) {
+            return when (d) {
+                in 1..2 -> 6
+                in 3..5 -> 9
+                in 6..8 -> 12
+                in 9..14 -> 18
+                in 15..17 -> 24
+                in 18..23 -> 27
+                in 24..31 -> 3
+                else -> null
+            }
+        }
+        val dayOneRules = mapOf(
+            599 to 9,
+            699 to 9,
+            799 to 6,
+            899 to 9,
+            999 to 6
         )
-        return verifiedRules[planCode to installDate.dayOfMonth]
+        return if (d == 1) dayOneRules[planCode] else null
     }
 
     private fun updateCycleButtonLabel(isAuto: Boolean) {
@@ -624,11 +631,7 @@ class MainActivity : AppCompatActivity() {
             selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
         }
 
-        val firstCycleDays = if (selectedDate.dayOfMonth <= selectedCycleDay) {
-            (selectedCycleDay - selectedDate.dayOfMonth).coerceAtLeast(1)
-        } else {
-            ((30 - selectedDate.dayOfMonth).coerceAtLeast(0) + selectedCycleDay).coerceAtLeast(1)
-        }
+        val firstCycleDays = ChronoUnit.DAYS.between(selectedDate, currentBillDate).toInt().coerceAtLeast(1)
 
         data class BillRow(
             val monthTag: String,
