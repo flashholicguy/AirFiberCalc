@@ -44,12 +44,16 @@ class MainActivity : AppCompatActivity() {
     )
 
     private var selectedPlan: AirFiberPlan = plans.first()
+    private var selectedAdvance: Double = 2500.0
     private var selectedDate: LocalDate = LocalDate.now()
     private var selectedCycleDay: Int = 27
     private var lastWhatsAppReport: String = ""
 
     private lateinit var etGstBase: EditText
     private lateinit var tvGstResult: TextView
+    private lateinit var etPlanBase: EditText
+    private lateinit var btnAdv1500: TextView
+    private lateinit var btnAdv2500: TextView
     private lateinit var planChips: MutableMap<Int, TextView>
     private lateinit var tvPlanMeta: TextView
     private lateinit var tvDateBtn: TextView
@@ -118,11 +122,29 @@ class MainActivity : AppCompatActivity() {
                 val chip = createPill("₹${p.code}", p.code == selectedPlan.code).apply {
                     setPadding(dp(14), dp(9), dp(14), dp(9)); textSize = 13f
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (idx > 0) marginStart = dp(8) }
-                    setOnClickListener { selectedPlan = p; etGstBase.setText(p.code.toString()); updatePlanChipsUI(); recalculateLedger() }
+                    setOnClickListener { selectedPlan = p; etPlanBase.setText(p.code.toString()); etGstBase.setText(p.code.toString()); selectedAdvance = if (p.code == 3999) 14000.0 else if (selectedAdvance == 14000.0) 2500.0 else selectedAdvance; updateAdvanceToggleUI(); updatePlanChipsUI(); recalculateLedger() }
                 }
                 planChips[p.code] = chip; planRow.addView(chip)
             }
             planScroll.addView(planRow); addView(planScroll)
+            val advRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(8))
+            }
+            etPlanBase = createGlassInput("Plan (499)").apply {
+                setText("499")
+                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f)
+            }
+            btnAdv1500 = createPill("₹1500 Adv", false).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(8) }
+                setOnClickListener { selectedAdvance = 1500.0; updateAdvanceToggleUI(); recalculateLedger() }
+            }
+            btnAdv2500 = createPill("₹2500 Adv", true).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(8) }
+                setOnClickListener { selectedAdvance = 2500.0; updateAdvanceToggleUI(); recalculateLedger() }
+            }
+            advRow.addView(etPlanBase); advRow.addView(btnAdv1500); advRow.addView(btnAdv2500)
+            addView(advRow)
+
             tvPlanMeta = TextView(this@MainActivity).apply {
                 setBackgroundResource(R.drawable.glass_pill); setPadding(dp(12), dp(9), dp(12), dp(9)); textSize = 12f; setTextColor(Color.parseColor("#CBD5E1"))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
@@ -156,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.5)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.6)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -166,6 +188,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(rootScroll)
 
         etGstBase.addTextChangedListener(simpleWatcher { updateGst() })
+        etPlanBase.addTextChangedListener(simpleWatcher { recalculateLedger() })
         updateGst()
         recalculateLedger()
     }
@@ -529,32 +552,76 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun updateAdvanceToggleUI() {
+        btnAdv1500.setBackgroundResource(if (selectedAdvance == 1500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
+        btnAdv2500.setBackgroundResource(if (selectedAdvance == 2500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
+    }
+
     private fun recalculateLedger() {
-        val p = selectedPlan
-        tvPlanMeta.text = "${p.offering}\nMRP w/ 18% GST: ₹${formatMoney(p.mrpWithGst)}  •  Put Down: ₹${p.putDownPrice}  •  Validity: ${p.validityText()}"
-        val validityEndDate = selectedDate.plusMonths(p.validMonths.toLong()).plusDays(p.validDays.toLong())
-        var cycleDate = if (selectedDate.dayOfMonth <= selectedCycleDay) selectedDate.withDayOfMonth(selectedCycleDay) else selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
-        val monthLines = mutableListOf<String>()
-        while (!cycleDate.isAfter(validityEndDate)) {
-            monthLines.add("${cycleDate.format(shortMonthFmt)} Bill - Nil")
-            cycleDate = cycleDate.plusMonths(1)
+        val basePlan = etPlanBase.text.toString().toDoubleOrNull() ?: 499.0
+        val matchedPlan = plans.find { it.code == basePlan.toInt() }
+        val monthlyWithGst = round2(basePlan * 1.18)
+        tvPlanMeta.text = if (matchedPlan != null) {
+            "${matchedPlan.offering}\nMRP w/ 18% GST: ₹${formatMoney(monthlyWithGst)}  •  Advance Paid: ₹${formatMoney(selectedAdvance)}"
+        } else {
+            "Custom Plan ₹${basePlan.toInt()}  •  MRP w/ 18% GST: ₹${formatMoney(monthlyWithGst)}  •  Advance Paid: ₹${formatMoney(selectedAdvance)}"
         }
-        val payableBillDate = cycleDate
-        val dueDate = payableBillDate.plusDays(10)
-        val remainingDays = ChronoUnit.DAYS.between(validityEndDate, payableBillDate).toInt().coerceIn(1, 30)
-        val remainingAmount = round2((p.mrpWithGst / 30.0) * remainingDays)
-        val afterDiscount = round2((remainingAmount - 100.0).coerceAtLeast(0.0))
-        monthLines.add("${payableBillDate.format(shortMonthFmt)} Bill - ₹${formatMoney(remainingAmount)}")
-        val monthWiseBlock = monthLines.joinToString("\n")
+
+        var remainingAdvance = selectedAdvance
+        var currentBillDate = if (selectedDate.dayOfMonth <= selectedCycleDay) {
+            selectedDate.withDayOfMonth(selectedCycleDay)
+        } else {
+            selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
+        }
+
+        val firstCycleDays = ChronoUnit.DAYS.between(selectedDate, currentBillDate).toInt().coerceAtLeast(1)
+
+        data class BillRow(
+            val monthTag: String,
+            val billDate: LocalDate,
+            val dueDate: LocalDate,
+            val billAmount: Double,
+            val advanceAfter: Double,
+            val payable: Double
+        )
+
+        val rows = mutableListOf<BillRow>()
+        var isFirst = true
+
+        while (true) {
+            val rawBill = if (isFirst) round2((monthlyWithGst / 30.0) * firstCycleDays) else monthlyWithGst
+            isFirst = false
+            val dueDate = currentBillDate.plusDays(10)
+            val payable: Double
+            if (remainingAdvance >= rawBill) {
+                remainingAdvance = round2(remainingAdvance - rawBill)
+                payable = 0.0
+            } else {
+                payable = round2(rawBill - remainingAdvance)
+                remainingAdvance = 0.0
+            }
+
+            rows.add(BillRow(currentBillDate.format(shortMonthFmt), currentBillDate, dueDate, rawBill, remainingAdvance, payable))
+            if (payable > 0.0 || rows.size > 18) break
+            currentBillDate = currentBillDate.plusMonths(1)
+        }
+
+        val finalRow = rows.last()
+        val afterDiscount = round2((finalRow.payable - 100.0).coerceAtLeast(0.0))
+
+        val monthWiseBlock = rows.joinToString("\n") { r ->
+            if (r.payable == 0.0) "${r.monthTag} Bill - Nil"
+            else "${r.monthTag} Bill - ₹${formatMoney(r.payable)}"
+        }
 
         val exactOutput = "✅ Bill Details\n\n" +
-            "📦 Plan : ${p.code}\n" +
+            "📦 Plan : ${basePlan.toInt()} (₹${formatMoney(selectedAdvance)} Advance)\n" +
             "📅 Install Date : ${selectedDate.format(fullDateFmt)}\n" +
             "🔄 Billing Cycle : ${selectedCycleDay}${daySuffix(selectedCycleDay)} of every month\n\n" +
             "📊 Month Wise Bill - Payable Amount\n\n" +
             "$monthWiseBlock\n\n" +
-            "🗓️ Payable Bill Date : ${payableBillDate.format(fullDateFmt)}\n" +
-            "⏰ Due Date : ${dueDate.format(fullDateFmt)}\n\n" +
+            "🗓️ Payable Bill Date : ${finalRow.billDate.format(fullDateFmt)}\n" +
+            "⏰ Due Date : ${finalRow.dueDate.format(fullDateFmt)}\n\n" +
             "🎁 Get ₹100 Discount for the next 10 month\n" +
             "Pay your bill through Airtel Thanks App\n\n" +
             "💵 Payable Amount After Discount : ₹${formatMoney(afterDiscount)} (With GST)\n\n" +
@@ -562,20 +629,23 @@ class MainActivity : AppCompatActivity() {
 
         lastWhatsAppReport = exactOutput
         tvSummaryOutput.text = exactOutput
+
         ledgerContainer.removeAllViews()
-        listOf(
-            "Plan Offering: ${p.offering}",
-            "Put Down Paid at Install: ₹${p.putDownPrice} (Covers ${p.validityText()})",
-            "Validity Ends On: ${validityEndDate.format(fullDateFmt)}",
-            "Unbilled Days Before ${payableBillDate.format(fullDateFmt)}: $remainingDays days",
-            "Prorated Bill: (₹${formatMoney(p.mrpWithGst)} ÷ 30) × $remainingDays = ₹${formatMoney(remainingAmount)}",
-            "After ₹100 Airtel Thanks Discount: ₹${formatMoney(afterDiscount)}"
-        ).forEachIndexed { idx, line ->
-            ledgerContainer.addView(TextView(this).apply {
-                setBackgroundResource(if (idx == 5) R.drawable.glass_pill_active else R.drawable.glass_pill)
-                setPadding(dp(12), dp(9), dp(12), dp(9)); textSize = 12.5f; setTextColor(Color.parseColor("#E2E8F0")); text = line
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (idx > 0) topMargin = dp(6) }
-            })
+        rows.forEachIndexed { idx, r ->
+            val advLine = if (r.advanceAfter > 0.0) "Advance Remaining : ₹-${formatMoney(r.advanceAfter)}" else "Advance Remaining : ₹0.00"
+            val itemCard = TextView(this).apply {
+                setBackgroundResource(if (r.payable > 0) R.drawable.glass_pill_active else R.drawable.glass_pill)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                textSize = 13f
+                setTextColor(Color.parseColor("#E2E8F0"))
+                text = "📅 ${r.monthTag}   |   Bill: ₹${formatMoney(r.billAmount)}   |   Payable: ₹${formatMoney(r.payable)}\n" +
+                       "Bill Date: ${r.billDate.format(fullDateFmt)}   •   Due: ${r.dueDate.format(fullDateFmt)}\n" +
+                       (if (idx == 0) "Advance Paid: ₹${formatMoney(selectedAdvance)}   •   $advLine" else advLine)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    if (idx > 0) topMargin = dp(8)
+                }
+            }
+            ledgerContainer.addView(itemCard)
         }
     }
 
