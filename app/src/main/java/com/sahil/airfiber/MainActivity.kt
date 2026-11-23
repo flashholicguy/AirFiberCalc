@@ -129,7 +129,7 @@ class MainActivity : AppCompatActivity() {
             val actionRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, dp(10)) }
             actionRow.addView(createPill("Copy Bill Text", false).apply {
                 layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
-                setOnClickListener { (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Bill Details", lastWhatsAppReport)); Toast.makeText(this@MainActivity, "Copied WhatsApp bill text", Toast.LENGTH_SHORT).show() }
+                setOnClickListener { (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(ClipData.newPlainText("Bill Details", lastWhatsAppReport)); Toast.makeText(this@MainActivity, "Copied WhatsApp bill text", Toast.LENGTH_SHORT).show() }
             })
             actionRow.addView(createPill("Share WhatsApp", true).apply {
                 layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(8) }
