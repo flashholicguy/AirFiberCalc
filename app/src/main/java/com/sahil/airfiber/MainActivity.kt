@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedAdvance: Double = 2500.0
     private var selectedDate: LocalDate = LocalDate.now()
     private var selectedCycleDay: Int = 27
+    private var isManualCycleLocked: Boolean = false
     private var lastWhatsAppReport: String = ""
 
     private lateinit var etGstBase: EditText
@@ -122,7 +123,7 @@ class MainActivity : AppCompatActivity() {
                 val chip = createPill("₹${p.code}", p.code == selectedPlan.code).apply {
                     setPadding(dp(14), dp(9), dp(14), dp(9)); textSize = 13f
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { if (idx > 0) marginStart = dp(8) }
-                    setOnClickListener { selectedPlan = p; etPlanBase.setText(p.code.toString()); etGstBase.setText(p.code.toString()); selectedAdvance = if (p.code == 3999) 14000.0 else if (selectedAdvance == 14000.0) 2500.0 else selectedAdvance; updateAdvanceToggleUI(); updatePlanChipsUI(); recalculateLedger() }
+                    setOnClickListener { selectedPlan = p; etPlanBase.setText(p.code.toString()); etGstBase.setText(p.code.toString()); selectedAdvance = if (p.code == 3999) 14000.0 else if (selectedAdvance == 14000.0) 2500.0 else selectedAdvance; updateAdvanceToggleUI(); updatePlanChipsUI(); syncCycleWithInputs(); recalculateLedger() }
                 }
                 planChips[p.code] = chip; planRow.addView(chip)
             }
@@ -152,7 +153,7 @@ class MainActivity : AppCompatActivity() {
             addView(tvPlanMeta)
             val dateRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(12)) }
             tvDateBtn = createPill("Install: ${selectedDate.format(fullDateFmt)}", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.35f); setOnClickListener { openDatePicker() } }
-            tvCycleBtn = createPill("Cycle: 27th", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 0.95f).apply { marginStart = dp(8) }; setOnClickListener { openCycleSelector() } }
+            tvCycleBtn = createPill("Cycle: 27th • Manual", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.05f).apply { marginStart = dp(8) }; setOnClickListener { openCycleSelector() } }
             dateRow.addView(tvDateBtn); dateRow.addView(tvCycleBtn); addView(dateRow)
             tvSummaryOutput = TextView(this@MainActivity).apply { setBackgroundResource(R.drawable.glass_pill_active); setPadding(dp(14), dp(12), dp(14), dp(12)); textSize = 13.5f; setLineSpacing(dp(3).toFloat(), 1f); setTextColor(Color.parseColor("#F8FAFC")) }
             addView(tvSummaryOutput)
@@ -178,7 +179,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.7)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.8)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -188,8 +189,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(rootScroll)
 
         etGstBase.addTextChangedListener(simpleWatcher { updateGst() })
-        etPlanBase.addTextChangedListener(simpleWatcher { recalculateLedger() })
+        etPlanBase.addTextChangedListener(simpleWatcher { syncCycleWithInputs(); recalculateLedger() })
         updateGst()
+        syncCycleWithInputs()
         recalculateLedger()
     }
 
@@ -216,6 +218,7 @@ class MainActivity : AppCompatActivity() {
         showGlassDatePicker(selectedDate) { picked ->
             selectedDate = picked
             tvDateBtn.text = "Install: ${selectedDate.format(fullDateFmt)}"
+            syncCycleWithInputs()
             recalculateLedger()
         }
     }
@@ -522,7 +525,8 @@ class MainActivity : AppCompatActivity() {
                     }
                     setOnClickListener {
                         selectedCycleDay = dayNum
-                        tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)}"
+                        isManualCycleLocked = true
+                        updateCycleButtonLabel(isAuto = false)
                         recalculateLedger()
                         dialog.dismiss()
                     }
@@ -532,15 +536,28 @@ class MainActivity : AppCompatActivity() {
             rootCard.addView(row)
         }
 
+        val bottomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        val btnAutoReset = createPill("Auto-Detect", !isManualCycleLocked).apply {
+            textSize = 12.5f
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f)
+            setOnClickListener {
+                isManualCycleLocked = false
+                syncCycleWithInputs()
+                recalculateLedger()
+                dialog.dismiss()
+            }
+        }
         val btnCancel = createPill("Cancel", false).apply {
             textSize = 12.5f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(42)
-            ).apply { topMargin = dp(10) }
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginStart = dp(8) }
             setOnClickListener { dialog.dismiss() }
         }
-        rootCard.addView(btnCancel)
+        bottomRow.addView(btnAutoReset)
+        bottomRow.addView(btnCancel)
+        rootCard.addView(bottomRow)
 
         dialog.setContentView(rootCard)
         dialog.window?.apply {
@@ -555,6 +572,39 @@ class MainActivity : AppCompatActivity() {
     private fun updateAdvanceToggleUI() {
         btnAdv1500.setBackgroundResource(if (selectedAdvance == 1500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
         btnAdv2500.setBackgroundResource(if (selectedAdvance == 2500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
+    }
+
+    private fun resolveVerifiedCycle(planCode: Int, installDate: LocalDate): Int? {
+        val verifiedRules = mapOf(
+            (499 to 1) to 6,
+            (499 to 6) to 12,
+            (499 to 10) to 18,
+            (499 to 15) to 24,
+            (499 to 23) to 27,
+            (499 to 27) to 3,
+            (599 to 1) to 9,
+            (699 to 1) to 9,
+            (799 to 1) to 6,
+            (899 to 1) to 9,
+            (999 to 1) to 6
+        )
+        return verifiedRules[planCode to installDate.dayOfMonth]
+    }
+
+    private fun updateCycleButtonLabel(isAuto: Boolean) {
+        val modeTag = if (isAuto) "Auto" else "Manual"
+        tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)} • $modeTag"
+    }
+
+    private fun syncCycleWithInputs() {
+        val planCode = etPlanBase.text.toString().toDoubleOrNull()?.toInt() ?: selectedPlan.code
+        val detected = resolveVerifiedCycle(planCode, selectedDate)
+        if (!isManualCycleLocked && detected != null) {
+            selectedCycleDay = detected
+            updateCycleButtonLabel(isAuto = true)
+        } else {
+            updateCycleButtonLabel(isAuto = false)
+        }
     }
 
     private fun recalculateLedger() {
