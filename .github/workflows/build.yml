@@ -2,7 +2,7 @@ name: Build Signed Release APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, beta ]
   workflow_dispatch:
 
 permissions:
@@ -58,6 +58,7 @@ jobs:
           retention-days: 90
 
       - name: Publish to GitHub Releases
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
