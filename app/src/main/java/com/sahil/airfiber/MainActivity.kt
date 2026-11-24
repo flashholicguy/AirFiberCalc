@@ -46,8 +46,14 @@ class MainActivity : AppCompatActivity() {
     private var selectedPlan: AirFiberPlan = plans.first()
     private var selectedAdvance: Double = 2500.0
     private var selectedDate: LocalDate = LocalDate.now()
-    private var selectedCycleDay: Int = 27
-    private var isManualCycleLocked: Boolean = false
+    private enum class CycleDetectionState {
+        AUTO_VERIFIED,
+        MANUAL_SELECTED,
+        UNVERIFIED
+    }
+
+    private var selectedCycleDay: Int? = null
+    private var cycleState: CycleDetectionState = CycleDetectionState.UNVERIFIED
     private var lastWhatsAppReport: String = ""
 
     private lateinit var etGstBase: EditText
@@ -137,11 +143,11 @@ class MainActivity : AppCompatActivity() {
             }
             btnAdv1500 = createPill("₹1500 Adv", false).apply {
                 layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(8) }
-                setOnClickListener { selectedAdvance = 1500.0; updateAdvanceToggleUI(); recalculateLedger() }
+                setOnClickListener { selectedAdvance = 1500.0; updateAdvanceToggleUI(); syncCycleWithInputs(); recalculateLedger() }
             }
             btnAdv2500 = createPill("₹2500 Adv", true).apply {
                 layoutParams = LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(8) }
-                setOnClickListener { selectedAdvance = 2500.0; updateAdvanceToggleUI(); recalculateLedger() }
+                setOnClickListener { selectedAdvance = 2500.0; updateAdvanceToggleUI(); syncCycleWithInputs(); recalculateLedger() }
             }
             advRow.addView(etPlanBase); advRow.addView(btnAdv1500); advRow.addView(btnAdv2500)
             addView(advRow)
@@ -153,7 +159,7 @@ class MainActivity : AppCompatActivity() {
             addView(tvPlanMeta)
             val dateRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(12)) }
             tvDateBtn = createPill("Install: ${selectedDate.format(fullDateFmt)}", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.35f); setOnClickListener { openDatePicker() } }
-            tvCycleBtn = createPill("Cycle: 27th • Manual", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.05f).apply { marginStart = dp(8) }; setOnClickListener { openCycleSelector() } }
+            tvCycleBtn = createPill("Cycle not verified", false).apply { layoutParams = LinearLayout.LayoutParams(0, dp(46), 1.05f).apply { marginStart = dp(8) }; setOnClickListener { openCycleSelector() } }
             dateRow.addView(tvDateBtn); dateRow.addView(tvCycleBtn); addView(dateRow)
             tvSummaryOutput = TextView(this@MainActivity).apply { setBackgroundResource(R.drawable.glass_pill_active); setPadding(dp(14), dp(12), dp(14), dp(12)); textSize = 13.5f; setLineSpacing(dp(3).toFloat(), 1f); setTextColor(Color.parseColor("#F8FAFC")) }
             addView(tvSummaryOutput)
@@ -179,7 +185,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Feedback appreciated — reach out or check source updates:"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(6), 0, dp(10)) })
             addView(createIconLinkRow(R.drawable.ic_email, "sahilahmed698@gmail.com") { runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:sahilahmed698@gmail.com")).apply { putExtra(Intent.EXTRA_SUBJECT, "AirFiber Calc Feedback") }) } })
             addView(createIconLinkRow(R.drawable.ic_github, "github.com/sahilhv") { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy"))) } }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8) })
-            addView(createPill("Check Updates & Releases (v1.9)", true).apply {
+            addView(createPill("Check Updates & Releases (v1.9-beta.1)", true).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) }
                 setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/flashholicguy/AirFiberCalc/releases"))) } }
             })
@@ -496,7 +502,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         headerRow.addView(TextView(this).apply {
-            text = "${selectedCycleDay}${daySuffix(selectedCycleDay)} monthly"
+            text = selectedCycleDay?.let { "${it}${daySuffix(it)} monthly" } ?: "Not verified"
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#38BDF8"))
@@ -517,7 +523,7 @@ class MainActivity : AppCompatActivity() {
             }
             for (colIdx in 0 until 4) {
                 val dayNum = (rowIdx * 4) + colIdx + 1
-                val isSelected = dayNum == selectedCycleDay
+                val isSelected = (selectedCycleDay != null && dayNum == selectedCycleDay)
                 val cell = createPill("${dayNum}${daySuffix(dayNum)}", isSelected).apply {
                     textSize = 13f
                     layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply {
@@ -525,8 +531,8 @@ class MainActivity : AppCompatActivity() {
                     }
                     setOnClickListener {
                         selectedCycleDay = dayNum
-                        isManualCycleLocked = true
-                        updateCycleButtonLabel(isAuto = false)
+                        cycleState = CycleDetectionState.MANUAL_SELECTED
+                        updateCycleButtonLabel()
                         recalculateLedger()
                         dialog.dismiss()
                     }
@@ -540,11 +546,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(10), 0, 0)
         }
-        val btnAutoReset = createPill("Auto-Detect", !isManualCycleLocked).apply {
+        val btnAutoReset = createPill("Auto-Detect", cycleState != CycleDetectionState.MANUAL_SELECTED).apply {
             textSize = 12.5f
             layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f)
             setOnClickListener {
-                isManualCycleLocked = false
+                cycleState = CycleDetectionState.UNVERIFIED
+                selectedCycleDay = null
                 syncCycleWithInputs()
                 recalculateLedger()
                 dialog.dismiss()
@@ -574,47 +581,105 @@ class MainActivity : AppCompatActivity() {
         btnAdv2500.setBackgroundResource(if (selectedAdvance == 2500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
     }
 
-    private fun resolveVerifiedCycle(planCode: Int, installDate: LocalDate): Int? {
+    private fun resolveVerifiedCycle(planCode: Int, advanceAmount: Int, installDate: LocalDate): Int? {
+        val y = installDate.year
+        val m = installDate.monthValue
         val d = installDate.dayOfMonth
-        if (planCode == 499) {
-            return when (d) {
-                in 1..2 -> 6
-                in 3..5 -> 9
-                in 6..8 -> 12
-                in 9..14 -> 18
-                in 15..17 -> 24
-                in 18..23 -> 27
-                in 24..31 -> 3
-                else -> null
+
+        // November 2026 verified Airtel Telegram bot mappings only
+        if (y == 2026 && m == 11) {
+            if (planCode == 499 && advanceAmount == 2500) {
+                return when (d) {
+                    in 1..2 -> 6
+                    in 3..5 -> 9
+                    in 6..8 -> 12
+                    in 9..14 -> 18
+                    in 15..17 -> 24
+                    in 18..23 -> 27
+                    in 24..30 -> 3
+                    else -> null
+                }
+            }
+            if (planCode == 599 && (advanceAmount == 2500 || advanceAmount == 1500)) {
+                return when (d) {
+                    in 1..4 -> 9
+                    in 5..8 -> 12
+                    in 9..11 -> 18
+                    in 12..17 -> 24
+                    in 18..23 -> 27
+                    in 24..27 -> 3
+                    in 28..30 -> 6
+                    else -> null
+                }
+            }
+            return null
+        }
+
+        // July 2026 confirmed individual reference points only (no generalization)
+        if (y == 2026 && m == 7 && (advanceAmount == 1500 || advanceAmount == 2500)) {
+            if (planCode == 499) {
+                return when (d) {
+                    1 -> 6
+                    6 -> 12
+                    10 -> 18
+                    15 -> 24
+                    27 -> 3
+                    else -> null
+                }
+            }
+            if (d == 1) {
+                return when (planCode) {
+                    599, 699, 899 -> 9
+                    799, 999 -> 6
+                    else -> null
+                }
             }
         }
-        val dayOneRules = mapOf(
-            599 to 9,
-            699 to 9,
-            799 to 6,
-            899 to 9,
-            999 to 6
-        )
-        return if (d == 1) dayOneRules[planCode] else null
+
+        return null
     }
 
-    private fun updateCycleButtonLabel(isAuto: Boolean) {
-        val modeTag = if (isAuto) "Auto" else "Manual"
-        tvCycleBtn.text = "Cycle: ${selectedCycleDay}${daySuffix(selectedCycleDay)} • $modeTag"
+    private fun updateCycleButtonLabel() {
+        val day = selectedCycleDay
+        tvCycleBtn.text = when (cycleState) {
+            CycleDetectionState.AUTO_VERIFIED ->
+                if (day != null) "Cycle: ${day}${daySuffix(day)} • Auto" else "Cycle not verified"
+            CycleDetectionState.MANUAL_SELECTED ->
+                if (day != null) "Cycle: ${day}${daySuffix(day)} • Manual" else "Cycle not verified"
+            CycleDetectionState.UNVERIFIED ->
+                "Cycle not verified"
+        }
     }
 
     private fun syncCycleWithInputs() {
-        val planCode = etPlanBase.text.toString().toDoubleOrNull()?.toInt() ?: selectedPlan.code
-        val detected = resolveVerifiedCycle(planCode, selectedDate)
-        if (!isManualCycleLocked && detected != null) {
-            selectedCycleDay = detected
-            updateCycleButtonLabel(isAuto = true)
-        } else {
-            updateCycleButtonLabel(isAuto = false)
+        // Preserve explicit manual override across plan, advance, and date changes
+        if (cycleState == CycleDetectionState.MANUAL_SELECTED && selectedCycleDay != null) {
+            updateCycleButtonLabel()
+            return
         }
+
+        val planCode = etPlanBase.text.toString().toDoubleOrNull()?.toInt() ?: selectedPlan.code
+        val advanceAmount = selectedAdvance.toInt()
+        val detected = resolveVerifiedCycle(planCode, advanceAmount, selectedDate)
+
+        if (detected != null) {
+            selectedCycleDay = detected
+            cycleState = CycleDetectionState.AUTO_VERIFIED
+        } else {
+            selectedCycleDay = null
+            cycleState = CycleDetectionState.UNVERIFIED
+        }
+        updateCycleButtonLabel()
     }
 
     private fun recalculateLedger() {
+        val cycleDay = selectedCycleDay
+        if (cycleDay == null || cycleState == CycleDetectionState.UNVERIFIED) {
+            ledgerContainer.removeAllViews()
+            tvSummaryOutput.text = "⚠️ Cycle not verified for this Plan, Advance & Date.\nTap the Cycle button above to select a billing cycle manually."
+            lastWhatsAppReport = ""
+            return
+        }
         val basePlan = etPlanBase.text.toString().toDoubleOrNull() ?: 499.0
         val matchedPlan = plans.find { it.code == basePlan.toInt() }
         val monthlyWithGst = round2(basePlan * 1.18)
@@ -625,10 +690,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         var remainingAdvance = selectedAdvance
-        var currentBillDate = if (selectedDate.dayOfMonth <= selectedCycleDay) {
-            selectedDate.withDayOfMonth(selectedCycleDay)
+        var currentBillDate = if (selectedDate.dayOfMonth <= cycleDay) {
+            selectedDate.withDayOfMonth(cycleDay)
         } else {
-            selectedDate.plusMonths(1).withDayOfMonth(selectedCycleDay)
+            selectedDate.plusMonths(1).withDayOfMonth(cycleDay)
         }
 
         val firstCycleDays = ChronoUnit.DAYS.between(selectedDate, currentBillDate).toInt().coerceAtLeast(1)
@@ -674,7 +739,7 @@ class MainActivity : AppCompatActivity() {
         val exactOutput = "✅ Bill Details\n\n" +
             "📦 Plan : ${basePlan.toInt()} (₹${formatMoney(selectedAdvance)} Advance)\n" +
             "📅 Install Date : ${selectedDate.format(fullDateFmt)}\n" +
-            "🔄 Billing Cycle : ${selectedCycleDay}${daySuffix(selectedCycleDay)} of every month\n\n" +
+            "🔄 Billing Cycle : ${cycleDay}${daySuffix(cycleDay)} of every month\n\n" +
             "📊 Month Wise Bill - Payable Amount\n\n" +
             "$monthWiseBlock\n\n" +
             "🗓️ Payable Bill Date : ${finalRow.billDate.format(fullDateFmt)}\n" +
