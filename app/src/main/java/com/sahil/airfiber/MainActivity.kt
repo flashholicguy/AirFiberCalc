@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.15f)
             addView(TextView(this@MainActivity).apply { text = "AirFiber Billing & GST"; textSize = 20f; setTypeface(null, Typeface.BOLD); setTextColor(Color.parseColor("#F8FAFC")) })
-            addView(TextView(this@MainActivity).apply { text = "Plan Validity & 27th Cycle Calculator"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(2), 0, 0) })
+            addView(TextView(this@MainActivity).apply { text = "Plan Validity & Billing Cycle Calculator"; textSize = 12f; setTextColor(Color.parseColor("#94A3B8")); setPadding(0, dp(2), 0, 0) })
         }
         val creditCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
@@ -581,62 +581,46 @@ class MainActivity : AppCompatActivity() {
         btnAdv2500.setBackgroundResource(if (selectedAdvance == 2500.0) R.drawable.glass_pill_active else R.drawable.glass_pill)
     }
 
+    private enum class AirFiberProductCategory {
+        STANDALONE_AIRFIBER,
+        AIRFIBER_IPTV_OTT
+    }
+
+    private fun resolveProductCategory(planCode: Int): AirFiberProductCategory? {
+        return when (planCode) {
+            499, 799, 999 -> AirFiberProductCategory.STANDALONE_AIRFIBER
+            599, 699, 899, 1199, 1599 -> AirFiberProductCategory.AIRFIBER_IPTV_OTT
+            else -> null // 3999 and unknown/custom plans intentionally unverified
+        }
+    }
+
     private fun resolveVerifiedCycle(planCode: Int, advanceAmount: Int, installDate: LocalDate): Int? {
-        val y = installDate.year
-        val m = installDate.monthValue
+        val category = resolveProductCategory(planCode) ?: return null
         val d = installDate.dayOfMonth
+        if (d !in 1..30) return null // Day 31 intentionally unverified
 
-        // November 2026 verified Airtel Telegram bot mappings only
-        if (y == 2026 && m == 11) {
-            if (planCode == 499 && advanceAmount == 2500) {
-                return when (d) {
-                    in 1..2 -> 6
-                    in 3..5 -> 9
-                    in 6..8 -> 12
-                    in 9..14 -> 18
-                    in 15..17 -> 24
-                    in 18..23 -> 27
-                    in 24..30 -> 3
-                    else -> null
-                }
+        return when (category) {
+            AirFiberProductCategory.STANDALONE_AIRFIBER -> when (d) {
+                in 1..2 -> 6
+                in 3..5 -> 9
+                in 6..8 -> 12
+                in 9..14 -> 18
+                in 15..17 -> 24
+                in 18..23 -> 27
+                in 24..30 -> 3
+                else -> null
             }
-            if (planCode == 599 && (advanceAmount == 2500 || advanceAmount == 1500)) {
-                return when (d) {
-                    in 1..4 -> 9
-                    in 5..8 -> 12
-                    in 9..11 -> 18
-                    in 12..17 -> 24
-                    in 18..23 -> 27
-                    in 24..27 -> 3
-                    in 28..30 -> 6
-                    else -> null
-                }
-            }
-            return null
-        }
-
-        // July 2026 confirmed individual reference points only (no generalization)
-        if (y == 2026 && m == 7 && (advanceAmount == 1500 || advanceAmount == 2500)) {
-            if (planCode == 499) {
-                return when (d) {
-                    1 -> 6
-                    6 -> 12
-                    10 -> 18
-                    15 -> 24
-                    27 -> 3
-                    else -> null
-                }
-            }
-            if (d == 1) {
-                return when (planCode) {
-                    599, 699, 899 -> 9
-                    799, 999 -> 6
-                    else -> null
-                }
+            AirFiberProductCategory.AIRFIBER_IPTV_OTT -> when (d) {
+                in 1..4 -> 9
+                in 5..8 -> 12
+                in 9..11 -> 18
+                in 12..17 -> 24
+                in 18..23 -> 27
+                in 24..27 -> 3
+                in 28..30 -> 6
+                else -> null
             }
         }
-
-        return null
     }
 
     private fun updateCycleButtonLabel() {
