@@ -596,8 +596,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun resolveVerifiedCycle(planCode: Int, advanceAmount: Int, installDate: LocalDate): Int? {
         val category = resolveProductCategory(planCode) ?: return null
+        val daysInMonth = installDate.lengthOfMonth()
+        if (daysInMonth != 28 && daysInMonth != 30) return null
+
         val d = installDate.dayOfMonth
-        if (d !in 1..30) return null // Day 31 intentionally unverified
+        if (d !in 1..daysInMonth) return null
 
         return when (category) {
             AirFiberProductCategory.STANDALONE_AIRFIBER -> when (d) {
